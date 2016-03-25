@@ -65,17 +65,39 @@ def get_host_data(ctx):
 
 def get_containers(ctx):
     cadvisor_url = ctx['cadvisor_host'] + "/api/v1.3/docker"
-    resp = requests.get(cadvisor_url).json()
-    return resp.values()
+    resp = requests.get(cadvisor_url)
+    if resp.status_code == 500:
+        ## cadvisor have to die
+        import psutil, time
+        for proc in psutil.process_iter():
+            if proc.name() == 'cadvisor':
+                proc.kill()
+                time.sleep(3)
+                return get_containers(ctx)
+    return resp.json().values()
 
 
 def get_container(ctx, container):
+    _use_container_as_key = False
     if container.startswith('/docker/'):
         cadvisor_url = "%s/api/v1.3/%s" % (ctx['cadvisor_host'], container,)
-        return requests.get(cadvisor_url).json()[container]
+        _use_container_as_key = True
+    else:
+        cadvisor_url = "%s/api/v1.3/containers/%s" % (ctx['cadvisor_host'], container,)
 
-    cadvisor_url = "%s/api/v1.3/containers/%s" % (ctx['cadvisor_host'], container,)
-    return requests.get(cadvisor_url).json()
+    resp = requests.get(cadvisor_url)
+    if resp.status_code == 500:
+        ## cadvisor have to die
+        import psutil, time
+        for proc in psutil.process_iter():
+            if proc.name() == 'cadvisor':
+                proc.kill()
+                time.sleep(3)
+                return get_container(ctx, container)
+
+    if _use_container_as_key:
+        return resp.json()[container]
+    return resp.json()
 
 
 def get_container_paths(containers):
